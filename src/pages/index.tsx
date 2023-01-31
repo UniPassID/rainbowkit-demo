@@ -52,6 +52,8 @@ function App() {
   const { data: signer } = useSigner();
   const provider = useProvider<providers.Web3Provider>();
 
+  const [chainId, setChainId] = useState(0);
+
   const [signature, setSignature] = useState("");
   const [nativeHash, setNativeHash] = useState("");
 
@@ -70,12 +72,20 @@ function App() {
     }
   }, [isConnected]);
 
+  useEffect(() => {
+    if (provider && signer) {
+      signer?.getChainId().then((res) => {
+        setChainId(res);
+      });
+    }
+  }, [provider, signer]);
+
   const {
     data: typedDataSig,
     reset: restTypedData,
     signTypedData,
   } = useSignTypedData({
-    domain,
+    domain: { ...domain, chainId },
     types,
     value,
   });
