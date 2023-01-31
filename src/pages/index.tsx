@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SiweMessage } from "siwe";
 import { Button, Divider, Input, message } from "antd";
 import { providers } from "ethers";
-import { useAccount, useProvider, useSigner, useSignTypedData } from "wagmi";
+import {
+  useAccount,
+  useProvider,
+  useSigner,
+  useSignTypedData,
+  useConnect,
+} from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { etherToWei } from "../unipass/format_bignumber";
 import logo from "../assets/UniPass.svg";
@@ -53,6 +59,16 @@ function App() {
   const [siweSignature, setSiweSignature] = useState("");
 
   const [sendNativeLoading, setSendNativeLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isConnected) {
+      setSignature("");
+      setNativeHash("");
+      setSiweMessage("");
+      setSiweSignature("");
+      setSendNativeLoading(false);
+    }
+  }, [isConnected]);
 
   const {
     data: typedDataSig,
