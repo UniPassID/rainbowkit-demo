@@ -149,7 +149,7 @@ function App() {
   };
 
   return (
-    <div style={{ marginBottom: "50px", width: "750px" }}>
+    <div style={{ marginBottom: "50px" }}>
       <img src={logo} alt="" width={150} />
       <h1>RainbowKit + UniPass</h1>
       <ConnectButton />
