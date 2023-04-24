@@ -36,7 +36,7 @@ export default function Layout() {
         unipassWallet({
           chains,
           connect: {
-            chainId: polygonMumbai.id,
+            chainId: goerli.id,
             returnEmail: false,
             appSettings: {
               appName: "wagmi demo",
