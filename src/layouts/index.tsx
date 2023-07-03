@@ -10,7 +10,7 @@ import {
   metaMaskWallet,
   rainbowWallet,
 } from "@rainbow-me/rainbowkit/wallets";
-import { configureChains, createClient, WagmiConfig } from "wagmi";
+import { configureChains, createConfig, WagmiConfig } from "wagmi";
 import {
   optimismGoerli,
   arbitrumGoerli,
@@ -21,7 +21,7 @@ import { publicProvider } from "wagmi/providers/public";
 import { unipassWallet } from "@unipasswallet/rainbowkit-plugin";
 
 export default function Layout() {
-  const { chains, provider } = configureChains(
+  const { chains, publicClient } = configureChains(
     [goerli, polygonMumbai, arbitrumGoerli, optimismGoerli],
     [publicProvider()]
   );
@@ -31,13 +31,14 @@ export default function Layout() {
       groupName: "Recommended",
       wallets: [
         injectedWallet({ chains, shimDisconnect: true }),
-        metaMaskWallet({ chains, shimDisconnect: true }),
-        rainbowWallet({ chains }),
         unipassWallet({
           chains,
-          connect: {
-            chainId: goerli.id,
+          options: {
+            chainId: polygonMumbai.id,
             returnEmail: false,
+            configurations: {
+              onAuthChain: true,
+            },
             appSettings: {
               appName: "wagmi demo",
             },
@@ -47,15 +48,16 @@ export default function Layout() {
     },
   ]);
 
-  const wagmiClient = createClient({
+  // Set up wagmi config
+  const config = createConfig({
     autoConnect: true,
     connectors,
-    provider,
+    publicClient,
   });
 
   return (
     <div className={styles.navs}>
-      <WagmiConfig client={wagmiClient}>
+      <WagmiConfig config={config}>
         <RainbowKitProvider chains={chains}>
           <Outlet />
         </RainbowKitProvider>

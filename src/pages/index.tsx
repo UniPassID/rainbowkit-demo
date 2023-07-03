@@ -1,25 +1,30 @@
-import { useEffect, useState } from "react";
+import { etherToWei, weiToEther } from "@/unipass/format_bignumber";
 import { SiweMessage } from "siwe";
 import { Button, Divider, Input, message } from "antd";
-import { providers } from "ethers";
+import { utils } from "ethers";
+import { useEffect, useState } from "react";
 import {
   useAccount,
-  useProvider,
-  useSigner,
-  useSignTypedData,
   useConnect,
+  useDisconnect,
+  useSignTypedData,
+  useBalance,
+  useSignMessage,
+  useSendTransaction,
+  useChainId,
+  usePublicClient,
+  usePrepareSendTransaction,
 } from "wagmi";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { etherToWei } from "../unipass/format_bignumber";
+import { parseEther } from "viem";
 import logo from "../assets/UniPass.svg";
-import { verifySiweMessage } from "@/unipass/verify_message";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
 
 const { TextArea } = Input;
 
 const domain = {
   name: "Ether Mail",
   version: "1",
-  chainId: 80001,
+  chainId: 5,
   verifyingContract: "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC",
 } as const;
 
@@ -47,38 +52,34 @@ const value = {
   contents: "Hello, Bob!",
 } as const;
 
+const personalSignMessage = "Welcome to use Wagmi with unipass!";
+
 function App() {
   const { isConnected, address } = useAccount();
-  const { data: signer } = useSigner();
-  const provider = useProvider<providers.Web3Provider>();
+  const chainId = useChainId();
+  const publicClient = usePublicClient();
+  const {
+    data: signature1,
+    signMessageAsync: signMessageAsync1,
+    variables,
+  } = useSignMessage();
+  const { data: signature2, signMessageAsync: signMessageAsync2 } =
+    useSignMessage();
+  const { connect, connectors, pendingConnector, isLoading } = useConnect();
 
-  const [chainId, setChainId] = useState(0);
+  const { config } = usePrepareSendTransaction({
+    to: "0x2B6c74b4e8631854051B1A821029005476C3AF06",
+    value: parseEther("0.01"),
+    data: "0x",
+  });
+  const { sendTransactionAsync: _sendTransaction } = useSendTransaction(config);
 
-  const [signature, setSignature] = useState("");
+  const { disconnect } = useDisconnect();
+
+  const [balance, setBalance] = useState("0");
+
   const [nativeHash, setNativeHash] = useState("");
-
-  const [siweMessage, setSiweMessage] = useState("");
-  const [siweSignature, setSiweSignature] = useState("");
-
   const [sendNativeLoading, setSendNativeLoading] = useState(false);
-
-  useEffect(() => {
-    if (!isConnected) {
-      setSignature("");
-      setNativeHash("");
-      setSiweMessage("");
-      setSiweSignature("");
-      setSendNativeLoading(false);
-    }
-  }, [isConnected]);
-
-  useEffect(() => {
-    if (provider && signer) {
-      signer?.getChainId().then((res) => {
-        setChainId(res);
-      });
-    }
-  }, [provider, signer]);
 
   const {
     data: typedDataSig,
@@ -87,34 +88,35 @@ function App() {
   } = useSignTypedData({
     domain: { ...domain, chainId },
     types,
-    value,
+    primaryType: "Mail",
+    message: value,
   });
 
-  const signMessage = async () => {
-    if (signer) {
-      const signature = await signer.signMessage(
-        "Welcome to use Wagmi with unipass!"
+  useEffect(() => {
+    if (publicClient && address) {
+      publicClient?.getBalance({ address }).then((res) => {
+        setBalance(weiToEther(res ?? 0));
+      });
+    }
+  }, [publicClient, address]);
+
+  const signWithEthereum = async () => {
+    if (address) {
+      const siweMessage = createSiweMessage(
+        address!,
+        "This is a test statement."
       );
-      setSignature(signature);
+      const _signature = await signMessageAsync1({ message: siweMessage });
     }
   };
 
   const sendTransaction = async () => {
-    if (signer && address) {
+    if (address) {
       try {
         setSendNativeLoading(true);
-        const txParams = {
-          from: address,
-          to: "0x2B6c74b4e8631854051B1A821029005476C3AF06",
-          value: etherToWei("0.001"),
-          data: "0x",
-        };
-        console.log(txParams);
 
-        const txResp = await signer.sendTransaction(txParams);
-        const res = await txResp.wait();
-        console.log(res);
-        setNativeHash(res.transactionHash);
+        const txResp = await _sendTransaction?.();
+        setNativeHash(txResp?.hash || "");
       } catch (e: any) {
         message.error(e?.message || "error");
       } finally {
@@ -123,16 +125,40 @@ function App() {
     }
   };
 
-  const signWithEthereum = async () => {
-    if (signer && address) {
-      const siweMessage = createSiweMessage(
-        address!,
-        "This is a test statement."
+  const getConnectionButtons = () => {
+    if (!isConnected) {
+      return (
+        <>
+          {connectors.map((connector) => (
+            <Button
+              disabled={!connector.ready}
+              key={connector.id}
+              onClick={() => connect({ connector, chainId: 80001 })}
+              type="primary"
+              style={{ marginRight: "30px" }}
+            >
+              {connector.name}
+              {!connector.ready && " (unsupported)"}
+            </Button>
+          ))}
+        </>
       );
-      const _signature = await signer.signMessage(siweMessage);
-      setSiweMessage(siweMessage);
-      setSiweSignature(_signature);
     }
+
+    return (
+      <Button
+        onClick={() => {
+          setBalance("0");
+          setNativeHash("");
+          restTypedData();
+          disconnect();
+          setSendNativeLoading(false);
+        }}
+        type="dashed"
+      >
+        Disconnect Wallet
+      </Button>
+    );
   };
 
   const createSiweMessage = (address: string, statement: string) => {
@@ -143,9 +169,24 @@ function App() {
       statement,
       uri: origin,
       version: "1",
-      chainId: 80001,
+      chainId,
     });
     return siweMessage.prepareMessage();
+  };
+
+  const verifySiweMessage = async () => {
+    if (publicClient && signature1 && address) {
+      const isValid = await publicClient.verifyMessage({
+        address: address,
+        message: variables?.message || "",
+        signature: signature1,
+      });
+      if (isValid) {
+        message.success("verify success");
+      } else {
+        message.error("verify failed");
+      }
+    }
   };
 
   return (
@@ -159,13 +200,13 @@ function App() {
       <Button
         type="primary"
         disabled={!isConnected}
-        onClick={signMessage}
+        onClick={() => signMessageAsync2({ message: personalSignMessage })}
         style={{ marginRight: "30px" }}
       >
         Sign Message
       </Button>
       <h4>signature:</h4>
-      <TextArea rows={4} value={signature} />
+      <TextArea rows={4} value={signature2} />
 
       <Divider />
       <h3>Sign With Ethereum:</h3>
@@ -178,18 +219,22 @@ function App() {
         Sign With Ethereum
       </Button>
       <h4>siwe signature:</h4>
-      <TextArea rows={4} value={siweSignature} />
+      <TextArea rows={4} value={signature1} />
       <Button
         type="primary"
-        disabled={!siweSignature}
-        onClick={() => verifySiweMessage(siweMessage, siweSignature, provider)}
+        disabled={!signature1}
+        onClick={verifySiweMessage}
         style={{ marginRight: "30px", marginTop: "20px" }}
       >
         Verify Signature
       </Button>
 
       <Divider />
-      <Button type="primary" onClick={signTypedData} disabled={!isConnected}>
+      <Button
+        type="primary"
+        onClick={() => signTypedData()}
+        disabled={!isConnected}
+      >
         Sign Typed Data(EIP-712)
       </Button>
       <h4>Typed Data Signature:</h4>
